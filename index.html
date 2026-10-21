@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14181a">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<script src="config.js"></script>
+<title>Доска подъезда</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+/* Layout: экран-интерфейс (чистый графит) + бумажки на нём; справа колонка «дольше всего висит» и QR; внизу строка «голоса системы». */
+:root {
+  --screen: #14181a;
+  --panel: #1b2124;
+  --line: #2b3337;
+  --text: #e8ebe7;
+  --muted: #8f9a96;
+  --signal: #7ba3f2;
+  --alarm: #e66a55;
+  --ok: #74b98f;
+  --paper: #f5f2ea;
+  --paper-old: #d3b77d;
+  --ink: #233a6e;
+  --pin-problem: #d9503c;
+  --pin-request: #3f73c9;
+  --pin-notice: #8a8f8c;
+  --pin-idea: #4f9a63;
+  --f-ui: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --f-hand: "Caveat", "Segoe Print", "Comic Sans MS", cursive;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--screen); color: var(--text); font-family: var(--f-ui); font-size: clamp(14px, 0.95vw, 20px); overflow: hidden; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.app {
+  height: 100%; box-sizing: border-box;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: clamp(10px, 1.2vw, 22px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: clamp(12px, 1.4vw, 26px);
+  transition: filter .6s;
+}
+body.night .app { filter: brightness(.55); }
+
+/* ——— шапка ——— */
+.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 28px; border-bottom: 1px solid var(--line); padding-bottom: clamp(10px, 1vw, 18px); }
+.house { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; min-width: 0; }
+.house h1 { margin: 0; font-weight: 600; font-size: clamp(20px, 1.9vw, 40px); letter-spacing: -0.01em; text-wrap: balance; }
+.clock { color: var(--muted); font-size: clamp(14px, 1.05vw, 22px); }
+.clock b { font-family: var(--f-mono); color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.demo-chip { font-size: .72em; text-transform: uppercase; letter-spacing: .08em; border: 1px dashed var(--muted); color: var(--muted); padding: 2px 8px; border-radius: 4px; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 26px; margin: 0; padding: 0; list-style: none; }
+.stats li { display: flex; align-items: baseline; gap: 7px; color: var(--muted); white-space: nowrap; }
+.stats b { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 1.45em; color: var(--text); font-weight: 500; }
+.stats .alarm b { color: var(--alarm); }
+.stats .ok b { color: var(--ok); }
+
+/* ——— основная сетка ——— */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 21vw, 420px); gap: clamp(14px, 1.6vw, 32px); min-height: 0; }
+.board { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(190px, 13.2vw, 300px), 1fr)); align-content: start; align-items: start; gap: clamp(14px, 1.4vw, 28px) clamp(12px, 1.2vw, 24px); overflow: hidden; min-height: 0; padding: 10px 6px 0; }
+.pager { position: absolute; right: 8px; bottom: 4px; font-family: var(--f-mono); font-size: .78em; color: var(--muted); background: var(--screen); padding: 2px 6px; }
+.empty { color: var(--muted); max-width: 32ch; line-height: 1.5; font-size: 1.15em; margin: 8vh auto; text-align: center; }
+
+/* ——— бумажка ——— */
+.note {
+  --age: 0; --rot: 0deg; --paper-c: var(--paper); --stain: 0; --sx: 30%; --sy: 70%;
+  position: relative; box-sizing: border-box;
+  padding: 1.15em 1em .8em;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at var(--sx) var(--sy), rgba(120, 85, 25, var(--stain)) 0, rgba(120, 85, 25, 0) 38%),
+    radial-gradient(circle at calc(100% - var(--sy)) var(--sx), rgba(110, 80, 30, calc(var(--stain) * .7)) 0, rgba(110, 80, 30, 0) 30%),
+    var(--paper-c);
+  transform: rotate(var(--rot));
+  box-shadow: 0 1px 0 rgba(0,0,0,.25), 0 10px 22px -12px rgba(0,0,0,.7);
+  transition: transform .4s;
+}
+.note.paper-in {
+  background:
+    radial-gradient(circle at var(--sx) var(--sy), rgba(120, 85, 25, var(--stain)) 0, rgba(120, 85, 25, 0) 38%),
+    linear-gradient(rgba(70, 100, 170, .2) 1px, transparent 1px) 0 0 / 100% 16px,
+    linear-gradient(90deg, rgba(70, 100, 170, .2) 1px, transparent 1px) 0 0 / 16px 100%,
+    var(--paper-c);
+}
+.note::after { /* загнутый угол, растёт со временем */
+  content: ""; position: absolute; right: 0; bottom: 0;
+  width: calc(4px + var(--age) * 26px); height: calc(4px + var(--age) * 26px);
+  background: linear-gradient(135deg, rgba(0,0,0,.22) 0 50%, var(--screen) 50%);
+}
+.tape { position: absolute; top: -9px; left: 50%; width: 38%; height: 18px; transform: translateX(-50%) rotate(calc(var(--rot) * -1.6)); background: rgba(235, 232, 215, .55); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.note-head { display: flex; align-items: center; gap: 6px; font-family: var(--f-ui); font-size: .72em; text-transform: uppercase; letter-spacing: .07em; color: #5a5a55; }
+.pin { width: .8em; height: .8em; border-radius: 50%; background: var(--pin); box-shadow: inset -2px -2px 0 rgba(0,0,0,.25); flex: none; }
+.note-text { margin: .35em 0 .45em; font-family: var(--f-hand); font-weight: 500; font-size: clamp(19px, 1.5vw, 32px); line-height: 1.12; overflow-wrap: anywhere; opacity: calc(1 - var(--age) * .28); }
+.note-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-family: var(--f-mono); font-size: .72em; color: #55554f; font-variant-numeric: tabular-nums; }
+.note-foot .warn { color: #b23a26; font-weight: 700; }
+.src { position: absolute; top: .45em; right: .7em; font-family: var(--f-mono); font-size: .62em; color: #6a6a63; letter-spacing: .04em; }
+.cat-problem { --pin: var(--pin-problem); }
+.cat-request { --pin: var(--pin-request); }
+.cat-notice { --pin: var(--pin-notice); }
+.cat-idea { --pin: var(--pin-idea); }
+
+/* ——— правая колонка ——— */
+.side { display: flex; flex-direction: column; gap: clamp(14px, 1.4vw, 26px); min-height: 0; overflow: hidden; }
+.side h2 { margin: 0 0 .7em; font-size: .78em; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.longest ol, .resolved ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .85em; }
+.longest li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: baseline; }
+.days { font-family: var(--f-mono); font-weight: 700; font-size: clamp(30px, 2.8vw, 62px); line-height: .95; color: var(--alarm); font-variant-numeric: tabular-nums; grid-row: span 2; }
+.days small { display: block; font-size: .3em; font-weight: 500; color: var(--muted); letter-spacing: .04em; margin-top: 4px; }
+.longest p { margin: 0; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.longest .meta { color: var(--muted); font-size: .82em; }
+.resolved li { display: grid; gap: 2px; padding-left: 14px; border-left: 2px solid var(--ok); }
+.resolved li p { margin: 0; color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(143,154,150,.6); overflow-wrap: anywhere; }
+.resolved li span { font-family: var(--f-mono); font-size: .78em; color: var(--ok); }
+.none { color: var(--muted); margin: 0; font-size: .9em; }
+
+.write { margin-top: auto; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; border-top: 1px solid var(--line); padding-top: clamp(12px, 1.2vw, 22px); }
+.qr { width: clamp(96px, 7.6vw, 168px); aspect-ratio: 1; max-width: 100%; background: #fff; padding: 8px; box-sizing: border-box; display: grid; place-items: center; }
+.qr img, .qr canvas { width: 100% !important; height: auto !important; display: block; }
+.qr.placeholder { background: transparent; border: 1px dashed var(--muted); color: var(--muted); font-size: .72em; text-align: center; line-height: 1.3; padding: 8px; }
+.write strong { display: block; font-size: 1.15em; margin-bottom: .25em; }
+.write p { margin: 0 0 .4em; color: var(--muted); line-height: 1.35; font-size: .9em; }
+.write .honest { color: var(--text); opacity: .75; font-size: .82em; }
+
+/* ——— строка системы ——— */
+.bottom { display: flex; align-items: center; gap: 18px; border-top: 1px solid var(--line); padding-top: clamp(10px, 1vw, 16px); min-width: 0; }
+.voice { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 12px; }
+.voice-label { font-family: var(--f-mono); font-size: .72em; letter-spacing: .12em; color: var(--signal); border: 1px solid var(--signal); padding: 2px 6px; flex: none; }
+.voice-text { font-size: clamp(15px, 1.15vw, 24px); color: var(--text); transition: opacity .5s; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.voice-text.fade { opacity: 0; }
+.conn { display: flex; align-items: center; gap: 7px; font-family: var(--f-mono); font-size: .75em; color: var(--muted); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.conn.err .dot { background: var(--alarm); }
+.tools { display: flex; gap: 6px; }
+.tool { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; color: var(--muted); cursor: pointer; font-size: .8em; }
+.tool:hover { color: var(--text); border-color: var(--muted); }
+
+/* ——— настройки ——— */
+.sheet-bg { position: fixed; inset: 0; background: rgba(5, 7, 8, .72); display: grid; place-items: center; padding: 16px; z-index: 20; }
+.sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; width: min(640px, 100%); max-height: 90vh; overflow: auto; padding: 22px 24px; box-sizing: border-box; font-size: 15px; line-height: 1.5; }
+.sheet h2 { margin: 0 0 4px; font-size: 20px; }
+.sheet .lead { color: var(--muted); margin: 0 0 18px; }
+.field { display: grid; gap: 5px; margin-bottom: 14px; }
+.field label { font-weight: 500; }
+.field input { background: var(--screen); border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; color: var(--text); font: 14px var(--f-mono); width: 100%; box-sizing: border-box; }
+.field small { color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 18px; }
+.btn { border: 1px solid var(--line); background: var(--screen); border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+.btn.primary { background: var(--signal); border-color: var(--signal); color: #0d1424; font-weight: 600; }
+.sheet ol { padding-left: 20px; margin: 0; color: var(--muted); }
+.sheet ol li { margin-bottom: 8px; }
+.sheet ol b, .sheet code { color: var(--text); }
+.sheet code { font-family: var(--f-mono); font-size: 13px; background: var(--screen); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.msg { min-height: 1.4em; color: var(--alarm); margin: 0 0 6px; }
+
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100%; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .board { overflow: visible; grid-template-columns: minmax(0, 1fr); }
+  .voice { flex-basis: 100%; }
+  .voice-text { white-space: normal; }
+  .bottom { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .note, .voice-text, .app { transition: none; } }
+</style>
+</head>
+<body>
+
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="house">
+      <h1 id="house-name">Подъезд №3</h1>
+      <span class="clock" id="clock"></span>
+      <span class="demo-chip" id="demo-chip" hidden>Демо-данные</span>
+    </div>
+    <ul class="stats" id="stats"></ul>
+  </header>
+
+  <main class="main">
+    <section class="board" id="board" aria-label="Сообщения жителей"></section>
+
+    <aside class="side">
+      <section class="longest">
+        <h2>Дольше всего не решено</h2>
+        <ol id="longest"></ol>
+      </section>
+      <section class="resolved">
+        <h2>Жители отметили «решено»</h2>
+        <ul id="resolved"></ul>
+      </section>
+      <section class="write">
+        <div class="qr" id="qr"></div>
+        <div>
+          <strong>Написать соседям</strong>
+          <p>Наведите камеру на код. Без телефона — опустите записку в ящик под экраном.</p>
+          <p class="honest">Сообщение увидят соседи. Управляющая компания его автоматически не получит.</p>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="bottom">
+    <div class="voice" aria-live="polite">
+      <span class="voice-label">СИСТЕМА</span>
+      <span class="voice-text" id="voice">Ваше обращение важно для нас.</span>
+    </div>
+    <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">демо</span></div>
+    <div class="tools">
+      <button class="tool" id="btn-full" type="button">На весь экран</button>
+      <button class="tool" id="btn-set" type="button">Настройки</button>
+    </div>
+  </footer>
+</div>
+
+<div class="sheet-bg" id="settings" hidden>
+  <form class="sheet" id="settings-form" autocomplete="off">
+    <h2>Настройки доски</h2>
+    <p class="lead">Основные настройки лежат в файле config.js на GitHub. Здесь можно переопределить их только для этого устройства. Пустая ссылка на таблицу — показываются демо-данные.</p>
+    <div class="field">
+      <label for="set-name">Название на экране</label>
+      <input id="set-name" type="text" placeholder="Подъезд №3">
+    </div>
+    <div class="field">
+      <label for="set-csv">Ссылка на таблицу (CSV)</label>
+      <input id="set-csv" type="url" placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?output=csv">
+      <small>Файл → Поделиться → Опубликовать в интернете → лист с ответами → CSV.</small>
+    </div>
+    <div class="field">
+      <label for="set-form">Ссылка на форму (для QR-кода)</label>
+      <input id="set-form" type="url" placeholder="https://forms.gle/…">
+    </div>
+    <p class="msg" id="set-msg"></p>
+    <div class="actions">
+      <button class="btn primary" type="submit">Сохранить</button>
+      <button class="btn" type="button" id="set-demo">Сбросить к config.js</button>
+      <button class="btn" type="button" id="set-close">Закрыть</button>
+    </div>
+    <ol>
+      <li>Полная инструкция — в файле <code>README.md</code> в репозитории.</li>
+      <li>Статусы в таблице: <code>опубликовано</code>, <code>решено</code>, <code>отклонено</code>. Пустой статус — на модерации.</li>
+      <li>Данные обновляются раз в 30 секунд, страница перезагружается каждую ночь в 4:00 и подхватывает новый config.js.</li>
+    </ol>
+  </form>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var DAY = 864e5;
+  var REFRESH_MS = 30000, PAGE_MS = 15000, VOICE_MS = 11000;
+  var EXPIRE_DAYS = 21;       // объявления, просьбы и идеи «снимаются» через 3 недели
+  var RESOLVED_SHOW_DAYS = 14;
+  var STORE_KEY = "podezd-board-v1";
+
+  /* ——— настройки ——— */
+  // Порядок: значения по умолчанию ← config.js ← настройки этого устройства ← параметры в адресе
+  var cfg = { name: "Подъезд", csv: "", form: "" };
+  var base = window.BOARD_CONFIG || {};
+  ["name", "csv", "form"].forEach(function (k) { if (typeof base[k] === "string" && base[k].trim()) cfg[k] = base[k].trim(); });
+  var hasLocal = false;
+  try { var saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); if (saved) { Object.assign(cfg, saved); hasLocal = true; } } catch (e) {}
+  try {
+    var qs = new URLSearchParams(location.search);
+    if (qs.get("csv")) cfg.csv = qs.get("csv");
+    if (qs.get("form")) cfg.form = qs.get("form");
+    if (qs.get("name")) cfg.name = qs.get("name");
+  } catch (e) {}
+  function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (e) {} }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var board = $("board"), state = { items: [], demo: true, lastOk: null, error: false };
+
+  /* ——— утилиты ——— */
+  function plural(n, one, few, many) {
+    var a = Math.abs(n) % 100, b = a % 10;
+    if (a > 10 && a < 20) return many;
+    if (b > 1 && b < 5) return few;
+    if (b === 1) return one;
+    return many;
+  }
+  function daysWord(n) { return n + " " + plural(n, "день", "дня", "дней"); }
+  function ageDays(d, now) { return Math.max(0, Math.floor((now - d) / DAY)); }
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function hexRgb(h) { h = h.replace("#", ""); return [0, 2, 4].map(function (i) { return parseInt(h.substr(i, 2), 16); }); }
+  var P0 = hexRgb("#f5f2ea"), P1 = hexRgb("#d3b77d");
+  function paperAt(t) { return "rgb(" + P0.map(function (v, i) { return Math.round(v + (P1[i] - v) * t); }).join(",") + ")"; }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function hhmm(d) { return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); }
+  function relDay(n) { return n === 0 ? "сегодня" : n === 1 ? "вчера" : daysWord(n) + " назад"; }
+
+  /* ——— CSV ——— */
+  function parseCSV(text) {
+    var rows = [], row = [], f = "", q = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+        else f += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(f); f = ""; }
+      else if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; }
+      else if (c !== "\r") f += c;
+    }
+    if (f !== "" || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return x.trim() !== ""; }); });
+  }
+  function parseDate(s) {
+    s = (s || "").trim(); if (!s) return null;
+    var m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) return new Date(+m[3], +m[1] - 1, +m[2], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    var t = Date.parse(s.replace(" ", "T"));
+    return isNaN(t) ? null : new Date(t);
+  }
+  function normCat(s) {
+    s = (s || "").toLowerCase();
+    if (s.indexOf("проблем") > -1 || s.indexOf("жалоб") > -1) return "problem";
+    if (s.indexOf("прось") > -1 || s.indexOf("помо") > -1) return "request";
+    if (s.indexOf("иде") > -1 || s.indexOf("предлож") > -1) return "idea";
+    return "notice";
+  }
+  function rowsToItems(rows) {
+    if (rows.length < 2) return [];
+    var head = rows[0].map(function (h) { return h.trim().toLowerCase(); });
+    function col(keys, skip) {
+      for (var i = 0; i < head.length; i++) {
+        if (skip && skip.indexOf(i) > -1) continue;
+        for (var k = 0; k < keys.length; k++) if (head[i].indexOf(keys[k]) > -1) return i;
+      }
+      return -1;
+    }
+    var cTime = col(["отметка времени", "timestamp", "created", "дата"]);
+    var cText = col(["сообщени", "текст", "text"]);
+    var cCat = col(["категор", "category"]);
+    var cZone = col(["зона", "где", "zone", "место"]);
+    var cStatus = col(["статус", "status"]);
+    var cRes = col(["resolved", "дата решения", "решено"], [cStatus]);
+    var cChan = col(["канал", "channel"]);
+    var cToo = col(["тоже", "me_too", "metoo"]);
+    if (cText < 0) cText = cTime === 1 ? 2 : 1;
+    var out = [];
+    rows.slice(1).forEach(function (r, i) {
+      var text = (r[cText] || "").trim(); if (!text) return;
+      var st = cStatus > -1 ? (r[cStatus] || "").trim().toLowerCase() : "опубликовано";
+      var status;
+      if (st.indexOf("решен") > -1 || st.indexOf("resolved") > -1) status = "resolved";
+      else if (!st || st.indexOf("отклон") > -1 || st.indexOf("reject") > -1 || st.indexOf("модерац") > -1 || st.indexOf("скры") > -1) status = "hidden";
+      else status = "active";
+      if (status === "hidden") return;
+      var created = parseDate(cTime > -1 ? r[cTime] : "") || new Date();
+      out.push({
+        id: "r" + i + ":" + text.slice(0, 20),
+        created: created,
+        text: text.slice(0, 280),
+        cat: normCat(cCat > -1 ? r[cCat] : ""),
+        zone: cZone > -1 ? (r[cZone] || "").trim() : "",
+        status: status,
+        resolvedAt: cRes > -1 ? parseDate(r[cRes]) : null,
+        channel: cChan > -1 && /бумаг|paper/i.test(r[cChan] || "") ? "paper" : "web",
+        metoo: cToo > -1 ? (parseInt(r[cToo], 10) || 0) : 0
+      });
+    });
+    return out;
+  }
+
+  /* ——— демо-данные (примеры, не реальный дом) ——— */
+  function demoItems() {
+    var now = Date.now();
+    function ago(d, h) { return new Date(now - d * DAY - (h || 0) * 36e5); }
+    var raw = [
+      [47, 3, "problem", "лифт", "Лифт опять стоит между 5 и 6 этажом. Третий раз за месяц.", "web", 6],
+      [61, 5, "problem", "9 этаж", "Над 9 этажом после каждого дождя течёт с потолка. Ведро уже не помогает.", "paper", 2],
+      [33, 2, "problem", "лестница", "На 3 этаже не горит лампа. Вечером идти страшно.", "web", 3],
+      [19, 7, "problem", "мусоропровод", "Из мусоропровода пахнет на весь подъезд.", "web", 4],
+      [8, 1, "problem", "вход", "Домофон не открывается ключом, только кодом.", "web", 1],
+      [3, 4, "problem", "вход", "Почтовые ящики сломаны, письма пропадают.", "web", 0],
+      [12, 6, "idea", "1 этаж", "Давайте поставим полку для обмена книгами у окна на первом этаже.", "web", 5],
+      [9, 2, "idea", "лестница", "Повесить график уборки лестницы, как раньше было.", "paper", 1],
+      [6, 3, "notice", "двор", "В субботу в 11:00 субботник во дворе. Грабли и мешки дадут.", "web", 0],
+      [4, 8, "notice", "вход", "Нашли ключи с брелоком-рыбкой у почтовых ящиков. Висят на гвозде у двери.", "web", 0],
+      [1, 2, "notice", "2 этаж", "Отдам детскую коляску, почти новая. Стоит у 2 этажа до пятницы.", "web", 0],
+      [5, 1, "request", "7 этаж", "Кому не сложно помочь донести сумки по субботам утром? Я на 7 этаже.", "paper", 0],
+      [2, 5, "request", "", "Ищу, кто подтянет ребёнка по математике, 5 класс.", "web", 0],
+      [0, 2, "request", "лифт", "Кто знает телефон диспетчерской по лифтам? Старый не отвечает.", "web", 2]
+    ];
+    var items = raw.map(function (r, i) {
+      return { id: "d" + i, created: ago(r[0], r[1]), cat: r[2], zone: r[3], text: r[4], channel: r[5], metoo: r[6], status: "active", resolvedAt: null };
+    });
+    items.push({ id: "d90", created: ago(15), resolvedAt: ago(3), cat: "problem", zone: "вход", text: "Сломана ручка входной двери", channel: "web", metoo: 3, status: "resolved" });
+    items.push({ id: "d91", created: ago(11), resolvedAt: ago(6), cat: "problem", zone: "1 этаж", text: "Не горит свет у лифта на первом этаже", channel: "paper", metoo: 1, status: "resolved" });
+    return items;
+  }
+
+  /* ——— отрисовка ——— */
+  var view = { active: [], problems: [], resolved: [], paper: 0, oldest: null };
+  function computeView() {
+    var now = new Date();
+    view.active = state.items.filter(function (it) {
+      return it.status === "active" && (it.cat === "problem" || ageDays(it.created, now) <= EXPIRE_DAYS);
+    }).sort(function (a, b) { return b.created - a.created; });
+    view.problems = view.active.filter(function (it) { return it.cat === "problem"; })
+      .sort(function (a, b) { return a.created - b.created; });
+    view.resolved = state.items.filter(function (it) {
+      return it.status === "resolved" && (!it.resolvedAt || now - it.resolvedAt <= RESOLVED_SHOW_DAYS * DAY);
+    }).sort(function (a, b) { return (b.resolvedAt || 0) - (a.resolvedAt || 0); });
+    view.paper = view.active.filter(function (it) { return it.channel === "paper"; }).length;
+    view.oldest = view.problems[0] || null;
+    view.now = now;
+  }
+
+  function noteEl(it, now) {
+    var age = ageDays(it.created, now);
+    var t = it.cat === "problem" ? Math.min(1, age / 60) : Math.min(1, age / EXPIRE_DAYS) * 0.45;
+    var h = hash(it.id + it.text);
+    var rot = ((h % 600) / 100 - 3) + (it.cat === "problem" ? t * 3 * ((h & 1) ? 1 : -1) : 0);
+    var n = el("article", "note cat-" + it.cat + (it.channel === "paper" ? " paper-in" : ""));
+    n.style.setProperty("--age", t.toFixed(3));
+    n.style.setProperty("--rot", rot.toFixed(2) + "deg");
+    n.style.setProperty("--paper-c", paperAt(t));
+    n.style.setProperty("--stain", (it.cat === "problem" ? t * 0.34 : 0.03).toFixed(3));
+    n.style.setProperty("--sx", (20 + (h >> 3) % 60) + "%");
+    n.style.setProperty("--sy", (25 + (h >> 7) % 55) + "%");
+    n.appendChild(el("span", "tape"));
+    if (it.channel === "paper") n.appendChild(el("span", "src", "с бумаги"));
+    var head = el("div", "note-head");
+    head.appendChild(el("span", "pin"));
+    var names = { problem: "Проблема", request: "Просьба", notice: "Объявление", idea: "Идея" };
+    head.appendChild(el("span", "", names[it.cat] + (it.zone ? " · " + it.zone : "")));
+    n.appendChild(head);
+    n.appendChild(el("p", "note-text", it.text));
+    var foot = el("div", "note-foot");
+    if (it.cat === "problem") foot.appendChild(el("span", age >= 14 ? "warn" : "", "висит " + daysWord(age)));
+    else foot.appendChild(el("span", "", relDay(age)));
+    if (it.metoo > 0) foot.appendChild(el("span", "", "+" + it.metoo + " тоже"));
+    n.appendChild(foot);
+    return n;
+  }
+
+  function renderStats() {
+    var s = $("stats"); s.textContent = "";
+    var avg = view.problems.length ? Math.round(view.problems.reduce(function (a, it) { return a + ageDays(it.created, view.now); }, 0) / view.problems.length) : 0;
+    [
+      ["", view.active.length, plural(view.active.length, "сообщение", "сообщения", "сообщений") + " на доске"],
+      ["alarm", view.problems.length, plural(view.problems.length, "проблема висит", "проблемы висят", "проблем висит")],
+      ["", avg, plural(avg, "день", "дня", "дней") + " — средний срок"],
+      ["ok", view.resolved.length, "решено за 2 недели"]
+    ].forEach(function (r) {
+      var li = el("li", r[0]); li.appendChild(el("b", "", String(r[1]))); li.appendChild(el("span", "", r[2])); s.appendChild(li);
+    });
+  }
+
+  function renderSide() {
+    var ol = $("longest"); ol.textContent = "";
+    if (!view.problems.length) ol.appendChild(el("li", "none", "Нерешённых проблем на доске нет."));
+    view.problems.slice(0, 3).forEach(function (it) {
+      var d = ageDays(it.created, view.now);
+      var li = el("li");
+      var num = el("span", "days", String(d)); num.appendChild(el("small", "", plural(d, "день", "дня", "дней")));
+      li.appendChild(num);
+      li.appendChild(el("p", "", it.text));
+      li.appendChild(el("span", "meta", [it.zone, it.metoo ? "+" + it.metoo + " тоже" : "", it.channel === "paper" ? "с бумаги" : ""].filter(Boolean).join(" · ")));
+      ol.appendChild(li);
+    });
+    var ul = $("resolved"); ul.textContent = "";
+    if (!view.resolved.length) ul.appendChild(el("li", "none", "Пока ничего."));
+    view.resolved.slice(0, 3).forEach(function (it) {
+      var li = el("li");
+      li.appendChild(el("p", "", it.text));
+      var took = it.resolvedAt ? ageDays(it.created, it.resolvedAt) : null;
+      li.appendChild(el("span", "", took != null ? "решено за " + daysWord(took) : "решено"));
+      ul.appendChild(li);
+    });
+  }
+
+  var page = { start: 0, count: 0 };
+  function narrow() { return window.innerWidth <= 900; }
+  function renderBoard() {
+    board.textContent = "";
+    if (!view.active.length) {
+      board.appendChild(el("p", "empty", "Здесь пока пусто. Напишите первое сообщение — QR-код справа, или опустите записку в ящик."));
+      return;
+    }
+    view.active.forEach(function (it) { board.appendChild(noteEl(it, view.now)); });
+    var pager = el("span", "pager"); pager.id = "pager"; pager.hidden = true; board.appendChild(pager);
+    paginate();
+  }
+  function paginate() {
+    var notes = Array.prototype.slice.call(board.querySelectorAll(".note"));
+    var pager = $("pager"); if (!pager) return;
+    if (narrow()) { notes.forEach(function (n) { n.hidden = false; }); pager.hidden = true; page.count = notes.length; return; }
+    if (page.start >= notes.length) page.start = 0;
+    notes.forEach(function (n) { n.hidden = true; });
+    var H = board.clientHeight, shown = 0;
+    for (var i = page.start; i < notes.length; i++) {
+      notes[i].hidden = false;
+      if (notes[i].offsetTop + notes[i].offsetHeight > H - 6 && shown > 0) { notes[i].hidden = true; break; }
+      shown++;
+    }
+    page.count = shown;
+    if (shown < notes.length) {
+      pager.hidden = false;
+      pager.textContent = (page.start + 1) + "–" + (page.start + shown) + " из " + notes.length + " · листается само";
+    } else pager.hidden = true;
+  }
+  function nextPage() {
+    var total = board.querySelectorAll(".note").length;
+    if (narrow() || page.count >= total) return;
+    page.start += page.count; if (page.start >= total) page.start = 0;
+    paginate();
+  }
+
+  function renderQR() {
+    var box = $("qr"); box.textContent = ""; box.className = "qr";
+    if (!cfg.form) { box.className = "qr placeholder"; box.textContent = "QR появится, когда в настройках будет ссылка на форму"; return; }
+    if (typeof QRCode === "undefined") { box.className = "qr placeholder"; box.textContent = cfg.form; return; }
+    try { new QRCode(box, { text: cfg.form, width: 256, height: 256, colorDark: "#111111", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M }); }
+    catch (e) { box.className = "qr placeholder"; box.textContent = cfg.form; }
+  }
+
+  function render() {
+    computeView();
+    $("house-name").textContent = cfg.name || "Подъезд";
+    $("demo-chip").hidden = !state.demo;
+    renderStats(); renderSide(); renderBoard();
+    var c = $("conn"), ct = $("conn-text");
+    c.classList.toggle("err", state.error);
+    ct.textContent = state.demo ? "демо-данные" : state.error ? "нет связи" + (state.lastOk ? " · данные на " + hhmm(state.lastOk) : "") : "обновлено " + hhmm(state.lastOk);
+  }
+
+  /* ——— голос системы ——— */
+  var voiceIdx = 0;
+  function voiceLines() {
+    var lines = ["Ваше обращение важно для нас.", "Заявка зарегистрирована. Ожидайте."];
+    if (state.error) lines.unshift("Нет связи с таблицей. Показано состояние на " + (state.lastOk ? hhmm(state.lastOk) : "—") + ".");
+    if (view.oldest) lines.push("Самая старая проблема висит " + daysWord(ageDays(view.oldest.created, new Date())) + ".");
+    lines.push("Обращение передано в работу. Срок рассмотрения не установлен.");
+    lines.push("На доске " + view.active.length + " " + plural(view.active.length, "сообщение", "сообщения", "сообщений") + ". Решено за две недели: " + view.resolved.length + ".");
+    lines.push("Благодарим за активную гражданскую позицию.");
+    if (view.paper) lines.push("Получено на бумаге: " + view.paper + " из " + view.active.length + ".");
+    lines.push("Спасибо, что пользуетесь цифровыми сервисами.");
+    return lines;
+  }
+  function nextVoice() {
+    var v = $("voice"), lines = voiceLines();
+    v.classList.add("fade");
+    setTimeout(function () { voiceIdx = (voiceIdx + 1) % lines.length; v.textContent = lines[voiceIdx]; v.classList.remove("fade"); }, 500);
+  }
+
+  /* ——— данные ——— */
+  function load() {
+    if (!cfg.csv) { state.demo = true; state.error = false; state.items = demoItems(); render(); return; }
+    state.demo = false;
+    var url = cfg.csv + (cfg.csv.indexOf("?") > -1 ? "&" : "?") + "_=" + Date.now();
+    fetch(url, { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(function (t) {
+        if (/^\s*</.test(t)) throw new Error("Это не CSV: проверьте, что лист опубликован как CSV");
+        state.items = rowsToItems(parseCSV(t)); state.lastOk = new Date(); state.error = false; render();
+      })
+      .catch(function () { state.error = true; render(); });
+  }
+
+  /* ——— часы, ночь, перезагрузка ——— */
+  var started = Date.now();
+  function tick() {
+    var d = new Date();
+    var date = d.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    var c = $("clock"); c.textContent = date + " · ";
+    c.appendChild(el("b", "", hhmm(d)));
+    var h = d.getHours();
+    document.body.classList.toggle("night", h >= 23 || h < 7);
+    if (h === 4 && d.getMinutes() === 0 && Date.now() - started > 36e5) location.reload();
+  }
+
+  /* ——— настройки ——— */
+  function openSettings() {
+    $("set-name").value = cfg.name || ""; $("set-csv").value = cfg.csv || ""; $("set-form").value = cfg.form || "";
+    $("set-msg").textContent = ""; $("settings").hidden = false; $("set-name").focus();
+  }
+  function closeSettings() { $("settings").hidden = true; $("btn-set").focus(); }
+  $("btn-set").addEventListener("click", openSettings);
+  $("set-close").addEventListener("click", closeSettings);
+  $("settings").addEventListener("click", function (e) { if (e.target === this) closeSettings(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("settings").hidden) closeSettings(); });
+  $("set-demo").addEventListener("click", function () { try { localStorage.removeItem(STORE_KEY); } catch (e) {} location.reload(); });
+  $("settings-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var csv = $("set-csv").value.trim();
+    if (csv && !/^https?:\/\//.test(csv)) { $("set-msg").textContent = "Ссылка на таблицу должна начинаться с https://"; return; }
+    cfg.name = $("set-name").value.trim() || "Подъезд";
+    cfg.csv = csv; cfg.form = $("set-form").value.trim();
+    saveCfg(); renderQR(); page.start = 0; load(); closeSettings();
+  });
+  $("btn-full").addEventListener("click", function () {
+    var de = document.documentElement;
+    if (de.requestFullscreen) { var p = de.requestFullscreen(); if (p && p.catch) p.catch(function () {}); }
+  });
+  document.addEventListener("click", function once() {
+    try { if (navigator.wakeLock) navigator.wakeLock.request("screen").catch(function () {}); } catch (e) {}
+    document.removeEventListener("click", once);
+  });
+
+  /* ——— старт ——— */
+  tick(); renderQR(); load();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(paginate);
+  var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { page.start = 0; paginate(); }, 200); });
+  setInterval(tick, 15000);
+  setInterval(function () { if (cfg.csv) load(); else render(); }, REFRESH_MS);
+  setInterval(nextPage, PAGE_MS);
+  setInterval(nextVoice, VOICE_MS);
+})();
+</script>
+
+</body>
+</html>
